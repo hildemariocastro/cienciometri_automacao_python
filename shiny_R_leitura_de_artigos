@@ -1,0 +1,117 @@
+library(shiny)
+library(readr)
+library(dplyr)
+
+# =========================
+# CONFIGURAÇÕES
+# =========================
+ARQUIVO_ENTRADA <- "data/banco_classificado.csv"
+ARQUIVO_SAIDA   <- "data/banco_validado.csv"
+
+# =========================
+# LEITURA
+# =========================
+df <- read_csv(
+  ARQUIVO_ENTRADA,
+  locale = locale(encoding = "Latin1"),
+  show_col_types = FALSE
+)
+
+# =========================
+# MAPA DE COLUNAS (AJUSTÁVEL)
+# =========================
+col_title    <- intersect(names(df), c("title", "Title", "TI"))[1]
+col_abstract <- intersect(names(df), c("abstract", "Abstract", "Resumo"))[1]
+col_keywords <- intersect(names(df), c("keywords", "Author Keywords", "DE"))[1]
+col_cat_auto <- intersect(names(df), c("categoria", "categoria_auto"))[1]
+col_tec_auto <- intersect(names(df), c("tecnica", "tecnica_auto"))[1]
+col_status   <- intersect(names(df), c("status_prisma", "status"))[1]
+
+# Criar colunas finais se não existirem
+if (!"categoria_final" %in% names(df)) df$categoria_final <- NA
+if (!"tecnica_final"   %in% names(df)) df$tecnica_final   <- NA
+if (!"status_final"    %in% names(df)) df$status_final    <- NA
+
+# =========================
+# UI
+# =========================
+ui <- fluidPage(
+
+  titlePanel("Validação Manual Cienciométrica"),
+
+  sidebarLayout(
+    sidebarPanel(
+      numericInput("idx", "Índice do artigo", 1, 1, nrow(df)),
+
+      selectInput(
+        "categoria", "Categoria final",
+        choices = c("histologia", "aquicultura", "machine_learning", "outros")
+      ),
+
+      selectInput(
+        "tecnica", "Técnica histológica final",
+        choices = c("H&E", "IHQ", "Histoquímica", "Não identificada")
+      ),
+
+      selectInput(
+        "status", "Status PRISMA final",
+        choices = c("incluir", "excluir")
+      ),
+
+      actionButton("salvar", "💾 Salvar decisão")
+    ),
+
+    mainPanel(
+      h3("📄 Título"),
+      verbatimTextOutput("titulo"),
+
+      h3("🧾 Resumo"),
+      verbatimTextOutput("resumo"),
+
+      h3("🏷️ Palavras-chave"),
+      verbatimTextOutput("keywords"),
+
+      h3("🤖 Classificação automática"),
+      tableOutput("auto")
+    )
+  )
+)
+
+# =========================
+# SERVER
+# =========================
+server <- function(input, output, session) {
+
+  artigo <- reactive({
+    df[input$idx, ]
+  })
+
+  output$titulo <- renderText({
+    if (!is.na(col_title)) artigo()[[col_title]] else "Coluna não encontrada"
+  })
+
+  output$resumo <- renderText({
+    if (!is.na(col_abstract)) artigo()[[col_abstract]] else "Coluna não encontrada"
+  })
+
+  output$keywords <- renderText({
+    if (!is.na(col_keywords)) artigo()[[col_keywords]] else "Coluna não encontrada"
+  })
+
+  output$auto <- renderTable({
+    tibble(
+      Categoria = if (!is.na(col_cat_auto)) artigo()[[col_cat_auto]] else NA,
+      Técnica   = if (!is.na(col_tec_auto)) artigo()[[col_tec_auto]] else NA,
+      Status    = if (!is.na(col_status)) artigo()[[col_status]] else NA
+    )
+  })
+
+  observeEvent(input$salvar, {
+    df[input$idx, "categoria_final"] <<- input$categoria
+    df[input$idx, "tecnica_final"]   <<- input$tecnica
+    df[input$idx, "status_final"]    <<- input$status
+    write_csv(df, ARQUIVO_SAIDA)
+  })
+}
+
+shinyApp(ui, server)
